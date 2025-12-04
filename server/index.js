@@ -1191,7 +1191,6 @@ app.get("/api/export/livrari/:format", authenticateToken, async (req, res) => {
         const { format } = req.params;
         const { filterDate, filterSediu, showRambursOnly } = req.query;
         
-        // Construim condițiile WHERE
         let whereConditions = [];
         let queryParams = [];
         let paramCounter = 1;
@@ -1216,7 +1215,7 @@ app.get("/api/export/livrari/:format", authenticateToken, async (req, res) => {
             ? `WHERE ${whereConditions.join(' AND ')}` 
             : '';
 
-        // Obținem toate datele (fără paginare pentru export)
+        // AM SCOS data_actualizare DIN QUERY
         const query = `
             SELECT 
                 l.id_livrare as "ID",
@@ -1226,9 +1225,7 @@ app.get("/api/export/livrari/:format", authenticateToken, async (req, res) => {
                 TO_CHAR(l.data_planificata, 'DD-MM-YYYY HH24:MI') as "Data Planificată",
                 l.stare as "Stare",
                 l.ramburs_colectat as "Ramburs Colectat (RON)",
-                l.combustibil_consumat as "Combustibil Consumat (L)",
-                l.observatii as "Observații",
-                TO_CHAR(l.data_actualizare, 'DD-MM-YYYY HH24:MI') as "Data Actualizare"
+                l.combustibil_consumat as "Combustibil Consumat (L)"
             FROM Livrari l
             LEFT JOIN Curieri c ON l.id_curier = c.id_curier
             LEFT JOIN Colete col ON l.id_colet = col.id_colet
@@ -1239,7 +1236,6 @@ app.get("/api/export/livrari/:format", authenticateToken, async (req, res) => {
         
         const result = await pool.query(query, queryParams);
         
-        // Cenzurare date
         const data = result.rows.map(row => ({
             ...row,
             "Nume Curier": maskData(row["Nume Curier"], 'name')
@@ -1254,36 +1250,21 @@ app.get("/api/export/livrari/:format", authenticateToken, async (req, res) => {
                 { header: 'Data Planificată', key: 'Data Planificată', width: 20 },
                 { header: 'Stare', key: 'Stare', width: 15 },
                 { header: 'Ramburs Colectat (RON)', key: 'Ramburs Colectat (RON)', width: 20 },
-                { header: 'Combustibil Consumat (L)', key: 'Combustibil Consumat (L)', width: 25 },
-                { header: 'Observații', key: 'Observații', width: 30 },
-                { header: 'Data Actualizare', key: 'Data Actualizare', width: 20 }
+                { header: 'Combustibil Consumat (L)', key: 'Combustibil Consumat (L)', width: 25 }
             ];
             
             const workbook = await generateExcel(data, columns, 'Livrări');
             
-            // Adăugăm o a doua foaie cu sumar
+            // Sumar
             const summarySheet = workbook.addWorksheet('Sumar');
-            summarySheet.columns = [
-                { header: 'Metrică', key: 'metric', width: 30 },
-                { header: 'Valoare', key: 'value', width: 20 }
-            ];
+            summarySheet.columns = [{ header: 'Metrică', key: 'metric', width: 30 }, { header: 'Valoare', key: 'value', width: 20 }];
             
             const totalLivrari = data.length;
             const totalRamburs = data.reduce((sum, row) => sum + (parseFloat(row['Ramburs Colectat (RON)']) || 0), 0);
-            const livrariFinalizate = data.filter(row => row['Stare'] === 'livrat').length;
             
             summarySheet.addRow({ metric: 'Total Livrări', value: totalLivrari });
-            summarySheet.addRow({ metric: 'Livrări Finalizate', value: livrariFinalizate });
             summarySheet.addRow({ metric: 'Total Ramburs (RON)', value: totalRamburs.toFixed(2) });
             summarySheet.addRow({ metric: 'Data export', value: new Date().toLocaleDateString('ro-RO') });
-            
-            // Formatare sumar
-            summarySheet.getRow(1).font = { bold: true };
-            summarySheet.getRow(1).fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FFE0F0E0' }
-            };
             
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
             res.setHeader('Content-Disposition', `attachment; filename=livrari_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -1293,24 +1274,16 @@ app.get("/api/export/livrari/:format", authenticateToken, async (req, res) => {
             
         } else if (format === 'csv') {
             const csv = generateCSV(data);
-            
             res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename=livrari_${new Date().toISOString().slice(0,10)}.csv`);
             res.send(csv);
-            
         } else {
-            res.status(400).json({
-                success: false,
-                error: 'Format necunoscut. Folosiți "excel" sau "csv".'
-            });
+            res.status(400).json({ success: false, error: 'Format necunoscut.' });
         }
         
     } catch (error) {
         console.error("Eroare export livrări:", error);
-        res.status(500).json({
-            success: false,
-            error: 'Eroare la generarea exportului: ' + error.message
-        });
+        res.status(500).json({ success: false, error: 'Eroare la generarea exportului: ' + error.message });
     }
 });
 
@@ -1364,8 +1337,7 @@ app.get("/api/export/colete/:format", authenticateToken, async (req, res) => {
                 c.cost_transport as "Cost Transport (RON)",
                 c.mod_achitare as "Mod Achitare",
                 c.ramburs as "Ramburs (RON)",
-                c.stare as "Stare",
-                c.observatii as "Observații"
+                c.stare as "Stare"
             FROM Colete c
             LEFT JOIN Clienti cl ON c.id_client_expeditor = cl.id_client
             LEFT JOIN Sedii s ON c.id_sediu = s.id_sediu
@@ -1481,6 +1453,7 @@ app.get("/api/export/retururi/:format", authenticateToken, async (req, res) => {
             ? `WHERE ${whereConditions.join(' AND ')}` 
             : '';
 
+        // MODIFICARE AICI: Am schimbat 'r.stare' cu 'col.stare'
         const query = `
             SELECT 
                 r.id_retur as "ID",
@@ -1488,8 +1461,7 @@ app.get("/api/export/retururi/:format", authenticateToken, async (req, res) => {
                 TO_CHAR(r.data_retur, 'DD-MM-YYYY HH24:MI') as "Data Retur",
                 r.motiv as "Motiv",
                 r.cost_retur as "Cost Retur (RON)",
-                r.observatii as "Observații",
-                r.stare as "Stare"
+                col.stare as "Stare"
             FROM Retururi r
             LEFT JOIN Colete col ON r.id_colet = col.id_colet
             ${whereClause}
@@ -1506,43 +1478,21 @@ app.get("/api/export/retururi/:format", authenticateToken, async (req, res) => {
                 { header: 'Data Retur', key: 'Data Retur', width: 20 },
                 { header: 'Motiv', key: 'Motiv', width: 25 },
                 { header: 'Cost Retur (RON)', key: 'Cost Retur (RON)', width: 20 },
-                { header: 'Observații', key: 'Observații', width: 30 },
                 { header: 'Stare', key: 'Stare', width: 15 }
             ];
             
             const workbook = await generateExcel(data, columns, 'Retururi');
             
-            // Adăugăm sumar
+            // Sumar
             const summarySheet = workbook.addWorksheet('Sumar');
-            summarySheet.columns = [
-                { header: 'Metrică', key: 'metric', width: 30 },
-                { header: 'Valoare', key: 'value', width: 20 }
-            ];
+            summarySheet.columns = [{ header: 'Metrică', key: 'metric', width: 30 }, { header: 'Valoare', key: 'value', width: 20 }];
             
             const totalRetururi = data.length;
             const totalCost = data.reduce((sum, row) => sum + (parseFloat(row['Cost Retur (RON)']) || 0), 0);
-            const motiveCount = {};
-            data.forEach(row => {
-                const motiv = row['Motiv'] || 'Necunoscut';
-                motiveCount[motiv] = (motiveCount[motiv] || 0) + 1;
-            });
             
             summarySheet.addRow({ metric: 'Total Retururi', value: totalRetururi });
             summarySheet.addRow({ metric: 'Total Cost Retur (RON)', value: totalCost.toFixed(2) });
             summarySheet.addRow({ metric: 'Data export', value: new Date().toLocaleDateString('ro-RO') });
-            summarySheet.addRow({ metric: '', value: '' });
-            summarySheet.addRow({ metric: 'Distribuție pe motive', value: '' });
-            
-            Object.entries(motiveCount).forEach(([motiv, count]) => {
-                summarySheet.addRow({ metric: `  - ${motiv}`, value: count });
-            });
-            
-            summarySheet.getRow(1).font = { bold: true };
-            summarySheet.getRow(1).fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FFF0E0E0' }
-            };
             
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
             res.setHeader('Content-Disposition', `attachment; filename=retururi_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -1552,24 +1502,16 @@ app.get("/api/export/retururi/:format", authenticateToken, async (req, res) => {
             
         } else if (format === 'csv') {
             const csv = generateCSV(data);
-            
             res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename=retururi_${new Date().toISOString().slice(0,10)}.csv`);
             res.send(csv);
-            
         } else {
-            res.status(400).json({
-                success: false,
-                error: 'Format necunoscut.'
-            });
+            res.status(400).json({ success: false, error: 'Format necunoscut.' });
         }
         
     } catch (error) {
         console.error("Eroare export retururi:", error);
-        res.status(500).json({
-            success: false,
-            error: 'Eroare la generarea exportului: ' + error.message
-        });
+        res.status(500).json({ success: false, error: 'Eroare la generarea exportului: ' + error.message });
     }
 });
 

@@ -5,7 +5,7 @@ import {
   Scale, Box, User, Wallet, ClipboardList, Zap, PlayCircle, Calendar as CalendarIcon,
   Search, Briefcase, TrendingUp, RefreshCcw, CheckCircle, Clock, ArrowUpRight,
   LogOut, Lock, Mail, Printer, ChevronLeft, ChevronRight, Shield, UserCheck,
-  Download, FileSpreadsheet, FileText
+  Download, FileSpreadsheet, FileText, Database
 } from 'lucide-react';
 
 // Folosim 127.0.0.1 pentru stabilitate pe Windows
@@ -370,6 +370,240 @@ const CourierInterface = () => {
       return <LoginView />;
   }
 
+  // 0.1. COMPONENTA PRINCIPALA - ExportDataView.jsx
+// 8. EXPORT CENTER - Componenta Refăcută și Corectată
+  const ExportCenterView = () => {
+      // Funcția de request către server rămâne în părinte
+      const handleServerExport = async (endpoint, format, paramsObj) => {
+          try {
+              const params = new URLSearchParams();
+              
+              // Adăugăm toți parametrii din obiectul primit
+              Object.entries(paramsObj).forEach(([key, value]) => {
+                  if (value !== null && value !== undefined) {
+                      params.append(key, value);
+                  }
+              });
+
+              // Debugging: vedem exact ce trimitem
+              console.log(`Export ${endpoint} [${format}]:`, params.toString());
+
+              const response = await authFetch(`${API_URL}/export/${endpoint}/${format}?${params.toString()}`);
+              
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  throw new Error(errorText || "Eroare server");
+              }
+
+              // Descărcare fișier
+              const blob = await response.blob();
+              if (blob.size === 0) throw new Error("Fișierul primit este gol.");
+
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              const timestamp = new Date().toISOString().slice(0,10);
+              a.download = `${endpoint}_export_${timestamp}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              document.body.removeChild(a);
+              
+          } catch (error) {
+              console.error(error);
+              alert(`Eroare la export: ${error.message}`);
+          }
+      };
+
+      // Componenta Card izolată - are propriul state pentru a nu se bloca selecția
+      const ExportCard = ({ title, icon: Icon, description, endpoint, showDate = true, showSediu = false, showPeriod = false }) => {
+          const [loading, setLoading] = useState(false);
+          // State local per card
+          const [localDate, setLocalDate] = useState(new Date().toISOString().slice(0, 10)); // YYYY-MM-DD
+          const [localMonth, setLocalMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+          const [localYear, setLocalYear] = useState(new Date().getFullYear().toString());
+          const [localSediu, setLocalSediu] = useState('Toate');
+          const [localPeriod, setLocalPeriod] = useState('zi');
+
+          const onExportClick = async (format) => {
+              setLoading(true);
+              
+              // Pregătim parametrii corecți în funcție de endpoint
+              // Backend-ul din index.js are cerințe specifice pentru fiecare rută
+              let exportParams = {};
+
+              if (endpoint === 'livrari') {
+                  // Livrările folosesc 'filterDate' (doar zi) și 'filterSediu'
+                  exportParams = {
+                      filterDate: localDate,
+                      filterSediu: localSediu
+                  };
+              } else if (endpoint === 'colete') {
+                  // Coletele folosesc 'filterType', 'filterValue' și 'filterSediu'
+                  let val = localDate;
+                  if (localPeriod === 'luna') val = localMonth;
+                  if (localPeriod === 'an') val = localYear;
+
+                  exportParams = {
+                      filterType: localPeriod,
+                      filterValue: val,
+                      filterSediu: localSediu
+                  };
+              } else if (endpoint === 'retururi') {
+                  // Retururile folosesc 'filterType' și 'filterValue' (fără sediu în exportul simplu)
+                  let val = localDate;
+                  if (localPeriod === 'luna') val = localMonth;
+                  
+                  exportParams = {
+                      filterType: localPeriod,
+                      filterValue: val
+                  };
+              } else if (endpoint === 'rute') {
+                  // Rutele nu au filtre în backend
+                  exportParams = {};
+              }
+
+              await handleServerExport(endpoint, format, exportParams);
+              setLoading(false);
+          };
+
+          return (
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col h-full">
+                  <div className="flex items-start gap-4 mb-4">
+                      <div className="p-3 bg-blue-50 text-blue-600 rounded-lg shrink-0">
+                          <Icon className="w-6 h-6" />
+                      </div>
+                      <div>
+                          <h3 className="font-bold text-gray-800 text-lg">{title}</h3>
+                          <p className="text-sm text-gray-500">{description}</p>
+                      </div>
+                  </div>
+
+                  <div className="space-y-4 mb-6 bg-gray-50 p-4 rounded-lg text-sm flex-grow">
+                      {showPeriod && (
+                          <div>
+                              <label className="block text-xs font-bold text-gray-500 mb-1">Tip Perioadă</label>
+                              <div className="flex gap-2">
+                                  {['zi', 'luna', endpoint === 'retururi' ? null : 'an'].filter(Boolean).map(t => (
+                                      <button key={t} onClick={() => setLocalPeriod(t)} 
+                                          className={`flex-1 py-1.5 text-xs font-bold rounded capitalize transition-all ${localPeriod === t ? 'bg-blue-600 text-white shadow ring-2 ring-blue-200' : 'bg-white border text-gray-600 hover:bg-gray-100'}`}>
+                                          {t}
+                                      </button>
+                                  ))}
+                              </div>
+                          </div>
+                      )}
+
+                      {showDate && (
+                          <div>
+                              <label className="block text-xs font-bold text-gray-500 mb-1">
+                                  {localPeriod === 'luna' ? 'Selectează Luna' : localPeriod === 'an' ? 'Introduce Anul' : 'Selectează Ziua'}
+                              </label>
+                              {localPeriod === 'zi' && (
+                                  <input type="date" className="w-full border p-2 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none" 
+                                      value={localDate} onChange={(e) => setLocalDate(e.target.value)} />
+                              )}
+                              {localPeriod === 'luna' && (
+                                  <input type="month" className="w-full border p-2 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none" 
+                                      value={localMonth} onChange={(e) => setLocalMonth(e.target.value)} />
+                              )}
+                              {localPeriod === 'an' && (
+                                  <input type="number" min="2020" max="2030" className="w-full border p-2 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none" 
+                                      value={localYear} onChange={(e) => setLocalYear(e.target.value)} />
+                              )}
+                          </div>
+                      )}
+
+                      {showSediu && (
+                          <div>
+                              <label className="block text-xs font-bold text-gray-500 mb-1">Sediu</label>
+                              <select className="w-full border p-2 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none" 
+                                  value={localSediu} onChange={e => setLocalSediu(e.target.value)}>
+                                  <option value="Toate">Toate Sediile</option>
+                                  <option value="1">București</option>
+                                  <option value="2">Cluj-Napoca</option>
+                              </select>
+                          </div>
+                      )}
+                  </div>
+
+                  {/* Butoane Simetrice folosind GRID */}
+                  <div className="grid grid-cols-2 gap-3 mt-auto">
+                      <button 
+                          onClick={() => onExportClick('excel')}
+                          disabled={loading}
+                          className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2.5 px-4 rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm font-medium"
+                      >
+                          {loading ? <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"/> : <FileSpreadsheet className="w-4 h-4" />}
+                          <span>Excel</span>
+                      </button>
+                      <button 
+                          onClick={() => onExportClick('csv')}
+                          disabled={loading}
+                          className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm font-medium"
+                      >
+                          {loading ? <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"/> : <FileText className="w-4 h-4" />}
+                          <span>CSV</span>
+                      </button>
+                  </div>
+              </div>
+          );
+      };
+
+      return (
+          <div className="space-y-6 animate-fade-in p-2">
+              <div>
+                  <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                      <Download className="w-6 h-6 text-blue-600" /> Centru Export Date
+                  </h2>
+                  <p className="text-gray-500 mt-1">Exportă datele din sistem în format Excel sau CSV pentru contabilitate și analiză.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <ExportCard 
+                      title="Export Livrări" 
+                      description="Raport detaliat livrări, statusuri și rambursuri."
+                      endpoint="livrari"
+                      icon={Truck}
+                      showDate={true}
+                      showSediu={true}
+                      showPeriod={false} 
+                  />
+                  
+                  <ExportCard 
+                      title="Export Colete" 
+                      description="Registru complet colete intrate în sistem."
+                      endpoint="colete"
+                      icon={Package}
+                      showDate={true}
+                      showSediu={true}
+                      showPeriod={true}
+                  />
+
+                  <ExportCard 
+                      title="Export Retururi" 
+                      description="Situația retururilor și a motivelor de refuz."
+                      endpoint="retururi"
+                      icon={RefreshCcw}
+                      showDate={true}
+                      showSediu={false}
+                      showPeriod={true}
+                  />
+
+                  <ExportCard 
+                      title="Export Rute & Alocări" 
+                      description="Lista rutelor definite și a curierilor alocați."
+                      endpoint="rute"
+                      icon={MapPin}
+                      showDate={false}
+                      showSediu={false}
+                      showPeriod={false}
+                  />
+              </div>
+          </div>
+      );
+  };
+
   // --- COMPONENTELE PAGINILOR CU PAGINARE ---
 
   // 1. DASHBOARD
@@ -731,8 +965,24 @@ const CourierInterface = () => {
     };
 
     // --- GENERARE AWB PDF ---
-    const printAwb = (cod) => {
-        window.open(`${API_URL}/awb/${cod}`, '_blank');
+    const printAwb = async (cod) => {
+        try {
+            const response = await authFetch(`${API_URL}/awb/${cod}`);
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || 'Eroare la generarea AWB-ului');
+            }
+            const blob = await response.blob();
+            if (!blob || blob.size === 0) {
+                throw new Error('PDF-ul generat este gol.');
+            }
+            const url = window.URL.createObjectURL(blob);
+            window.open(url, '_blank');
+            setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+        } catch (e) {
+            console.error('Eroare AWB:', e);
+            alert(`Eroare la generarea AWB-ului: ${e.message}`);
+        }
     };
 
     // Funcții pentru manipularea filtrelor
@@ -1542,6 +1792,45 @@ const CourierInterface = () => {
   // 7. RAPOARTE
   // Înlocuiește componenta RapoarteView cu aceasta:
 
+const ExportButton = ({ data, filename }) => {
+  const exportToCSV = (data, filename) => {
+    if (!data || data.length === 0) {
+      alert('Nu există date de exportat!');
+      return;
+    }
+    
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => headers.map(header => {
+        const cell = row[header];
+        return typeof cell === 'string' ? `"${cell.replace(/"/g, '""')}"` : cell;
+      }).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <button 
+      className="btn btn-secondary" 
+      onClick={() => exportToCSV(data, filename)}
+    >
+      <i className="fas fa-download"></i> Exportă CSV
+    </button>
+  );
+};
+
 // 7. RAPOARTE & TARIFE - Versiune simplificată și stabilă
 const RapoarteView = () => {
     const [tarife, setTarife] = useState([]);
@@ -1621,7 +1910,40 @@ const RapoarteView = () => {
 
     return (
         <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-800">Rapoarte & Financiar</h2>
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <h2 className="text-2xl font-bold text-gray-800">Rapoarte & Financiar</h2>
+                {/* Zonă centralizată pentru exporturi */}
+                <div className="flex flex-wrap gap-2">
+                    <ExportButton
+                        endpoint="colete"
+                        buttonText="Export colete"
+                        buttonVariant="green"
+                        modalTitle="Export colete"
+                        modalDescription="Exportă în Excel sau CSV coletele pe perioada selectată (filtrare detaliată în tab-ul Colete)."
+                    />
+                    <ExportButton
+                        endpoint="livrari"
+                        buttonText="Export livrări"
+                        buttonVariant="blue"
+                        modalTitle="Export livrări"
+                        modalDescription="Export complet pentru livrări; poți folosi filtrele din tab-ul Livrări pentru selecții mai detaliate."
+                    />
+                    <ExportButton
+                        endpoint="retururi"
+                        buttonText="Export retururi"
+                        buttonVariant="red"
+                        modalTitle="Export retururi"
+                        modalDescription="Exportă retururile (poți alege perioada și tipul în ecranul de Retururi)."
+                    />
+                    <ExportButton
+                        endpoint="rute"
+                        buttonText="Export rute"
+                        buttonVariant="purple"
+                        modalTitle="Export rute"
+                        modalDescription="Exportă toate rutele definite în sistem."
+                    />
+                </div>
+            </div>
             
             {/* Prețuri combustibil */}
             <div className="bg-white p-6 rounded-xl shadow border-l-4 border-blue-600">
@@ -1849,6 +2171,7 @@ const RapoarteView = () => {
       case 'retururi': return <RetururiView />;
       case 'subcontractori': return <SubcontractoriView />;
       case 'rapoarte': return <RapoarteView />;
+      case 'export_data': return <ExportCenterView/>;
       default: return <DashboardView />;
     }
   };
@@ -1859,6 +2182,7 @@ const RapoarteView = () => {
         {id: 'dashboard', label: 'Dashboard', icon: Home, roles: ['Administrator', 'Manager', 'Operator', 'Curier']},
         {id: 'colete', label: 'Colete', icon: Package, roles: ['Administrator', 'Manager', 'Operator', 'Curier']},
         {id: 'livrari', label: 'Livrări & Dispecerat', icon: Truck, roles: ['Administrator', 'Manager', 'Operator', 'Curier']},
+        {id: 'export_data', label: 'Export Date', icon: Database, roles: ['Administrator', 'Manager']},
     ];
     
     // Adăugăm elemente specifice pentru admin
