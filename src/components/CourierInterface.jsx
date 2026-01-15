@@ -867,7 +867,8 @@ const CourierInterface = () => {
     const [newPkg, setNewPkg] = useState({
         cod: '', gr: '', cost: '', tip_serviciu: 'livrare', tip_cantarire: 'fizica',
         mod_achitare: 'expeditie', ramburs: '',
-        destinatar_nume: '', destinatar_tel: '', destinatar_oras: ''
+        destinatar_nume: '', destinatar_tel: '', destinatar_oras: '',
+        categorii_speciale: []
     });
 
     const [filterType, setFilterType] = useState('zi');
@@ -937,6 +938,17 @@ const CourierInterface = () => {
         loadData(1, pageSize);
     }, [filterType, filterValue, filterSediu]);
 
+    const toggleSpecialCategory = (category) => {
+        setNewPkg(prev => {
+            const currentCategories = prev.categorii_speciale || [];
+            if (currentCategories.includes(category)) {
+                return { ...prev, categorii_speciale: currentCategories.filter(c => c !== category) };
+            } else {
+                return { ...prev, categorii_speciale: [...currentCategories, category] };
+            }
+        });
+    };
+
     const openModalWithAutoCode = () => {
         const autoCode = generateTrackingCode();
         setNewPkg({ ...newPkg, cod: autoCode, gr: '', cost: '', tip_serviciu: 'livrare', ramburs: '' });
@@ -954,7 +966,8 @@ const CourierInterface = () => {
                     volum_m3: newPkg.tip_cantarire === 'volumetrica' ? newPkg.gr : null,
                     cost_transport: newPkg.cost,
                     mod_achitare: newPkg.mod_achitare,
-                    ramburs: newPkg.ramburs || 0
+                    ramburs: newPkg.ramburs || 0,
+                    categorii_speciale: newPkg.categorii_speciale
                 })
             });
             setIsModalOpen(false); 
@@ -1266,8 +1279,31 @@ const CourierInterface = () => {
                         <div className="space-y-4">
                             <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800 font-bold mb-2 flex items-center gap-2"><Package className="w-4 h-4"/> Pasul 2: Detalii Tehnice</div>
                             <div><label className="text-xs font-bold text-gray-500 block mb-1">Cod Colet (Auto-Generat)</label><div className="w-full bg-gray-100 border p-2 rounded text-center font-mono font-bold text-blue-800 tracking-wider select-all">{newPkg.cod}</div></div>
-                            {newPkg.tip_serviciu === 'livrare' && (<div className="border border-gray-200 p-3 rounded-lg space-y-3"><div><label className="text-xs font-bold text-gray-500 block mb-2">Mod Cântărire</label><div className="flex gap-4 mb-2"><label className="text-sm flex items-center gap-2"><input type="radio" checked={newPkg.tip_cantarire==='fizica'} onChange={()=>setNewPkg({...newPkg, tip_cantarire:'fizica'})}/> Fizică (Kg)</label><label className="text-sm flex items-center gap-2"><input type="radio" checked={newPkg.tip_cantarire==='volumetrica'} onChange={()=>setNewPkg({...newPkg, tip_cantarire:'volumetrica'})}/> Volumetrică (m³)</label></div><input type="number" className="w-full border p-2 rounded text-sm" placeholder={newPkg.tip_cantarire==='fizica'?"Ex: 2.5":"Ex: 0.15"} value={newPkg.gr} onChange={e=>setNewPkg({...newPkg, gr: e.target.value})} /></div><div><label className="text-xs font-bold text-gray-500 block mb-1">Categorii Speciale</label><div className="flex flex-wrap gap-2"><label className="bg-orange-50 border border-orange-100 px-2 py-1 rounded text-xs cursor-pointer flex items-center gap-1"><input type="checkbox"/> Fragil</label><label className="bg-yellow-50 border border-yellow-100 px-2 py-1 rounded text-xs cursor-pointer flex items-center gap-1"><input type="checkbox"/> Prețios</label><label className="bg-red-50 border border-red-100 px-2 py-1 rounded text-xs cursor-pointer flex items-center gap-1"><input type="checkbox"/> Periculos</label></div></div></div>)}
-                            <div><label className="text-xs font-bold text-gray-500 mt-2 block">Cost Transport Calculat</label><div className="relative"><input type="number" className="w-full border border-green-200 p-2 rounded bg-green-50 font-bold text-lg text-green-700" placeholder="0.00" value={newPkg.cost} onChange={e=>setNewPkg({...newPkg, cost: e.target.value})} /><span className="absolute right-3 top-3 text-xs font-bold text-green-600">RON</span></div></div>
+                            {newPkg.tip_serviciu === 'livrare' && (<div className="border border-gray-200 p-3 rounded-lg space-y-3">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 block mb-2">Mod Cântărire</label>
+                                    <div className="flex gap-4 mb-2"><label className="text-sm flex items-center gap-2"><input type="radio" checked={newPkg.tip_cantarire==='fizica'} onChange={()=>setNewPkg({...newPkg, tip_cantarire:'fizica'})}/> Fizică (Kg)</label><label className="text-sm flex items-center gap-2"><input type="radio" checked={newPkg.tip_cantarire==='volumetrica'} onChange={()=>setNewPkg({...newPkg, tip_cantarire:'volumetrica'})}/> Volumetrică (m³)</label></div>
+                                    <input type="number" className="w-full border p-2 rounded text-sm" placeholder={newPkg.tip_cantarire==='fizica'?"Ex: 2.5":"Ex: 0.15"} value={newPkg.gr} onChange={e=>setNewPkg({...newPkg, gr: e.target.value})} />
+                                </div>
+                                
+                                {/* --- COD MODIFICAT AICI (CATEGORII SPECIALE) --- */}
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 block mb-1">Categorii Speciale</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        <label className={`border px-2 py-1 rounded text-xs cursor-pointer flex items-center gap-1 transition-colors ${newPkg.categorii_speciale?.includes('fragil') ? 'bg-orange-100 border-orange-300 text-orange-800' : 'bg-gray-50 border-gray-200'}`}>
+                                            <input type="checkbox" checked={newPkg.categorii_speciale?.includes('fragil') || false} onChange={() => toggleSpecialCategory('fragil')}/> Fragil
+                                        </label>
+                                        <label className={`border px-2 py-1 rounded text-xs cursor-pointer flex items-center gap-1 transition-colors ${newPkg.categorii_speciale?.includes('pretios') ? 'bg-yellow-100 border-yellow-300 text-yellow-800' : 'bg-gray-50 border-gray-200'}`}>
+                                            <input type="checkbox" checked={newPkg.categorii_speciale?.includes('pretios') || false} onChange={() => toggleSpecialCategory('pretios')}/> Prețios
+                                        </label>
+                                        <label className={`border px-2 py-1 rounded text-xs cursor-pointer flex items-center gap-1 transition-colors ${newPkg.categorii_speciale?.includes('periculos') ? 'bg-red-100 border-red-300 text-red-800' : 'bg-gray-50 border-gray-200'}`}>
+                                            <input type="checkbox" checked={newPkg.categorii_speciale?.includes('periculos') || false} onChange={() => toggleSpecialCategory('periculos')}/> Periculos
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <div><label className="text-xs font-bold text-gray-500 mt-2 block">Cost Transport Calculat</label><div className="relative"><input type="number" className="w-full border border-green-200 p-2 rounded bg-green-50 font-bold text-lg text-green-700" placeholder="0.00" value={newPkg.cost} onChange={e=>setNewPkg({...newPkg, cost: e.target.value})} /><span className="absolute right-3 top-3 text-xs font-bold text-green-600">RON</span></div></div>
                         </div>
                     </div>
                     <div className="mt-6 pt-4 border-t flex justify-end"><button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold shadow transition-colors flex items-center gap-2"><CheckCircle className="w-4 h-4"/> Finalizare Preluare</button></div>
@@ -1742,7 +1778,7 @@ const CourierInterface = () => {
               <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {subs.map((s,i) => {
-                          const livrariZi = Math.floor((s.id_subcontractor * filterDate.length) % 15);
+                          const livrariZi = s.total_livrai || 0;
                           return (
                               <div key={i} className="bg-white p-5 rounded-xl shadow border-l-4 border-purple-500 flex justify-between items-center hover:shadow-lg transition-shadow">
                                   <div>

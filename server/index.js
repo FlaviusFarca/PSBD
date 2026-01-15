@@ -189,6 +189,12 @@ async function setupDatabase() {
             )
         `);
         console.log("✓ Tabela Utilizatori_Sistem verificată");
+
+        await client.query(`
+            ALTER TABLE Colete 
+            ADD COLUMN IF NOT EXISTS categorii_speciale TEXT
+        `);
+        console.log("✓ Coloana categorii_speciale verificată");
         
         // 4. Adaugă date demo în tabelele de bază dacă sunt goale
         // Sedii
@@ -700,14 +706,16 @@ app.get("/api/sedii", authenticateToken, async (req, res) => {
 
 app.post("/api/colete", authenticateToken, authorizeRoles('Administrator', 'Operator', 'Manager'), async (req, res) => {
     try {
-        const { cod_colet, greutate_fizica_kg, volum_m3, cost_transport, mod_achitare, ramburs } = req.body;
+        const { cod_colet, greutate_fizica_kg, volum_m3, cost_transport, mod_achitare, ramburs, categorii_speciale } = req.body;
         
         const val_ramburs = ramburs ? parseFloat(ramburs) : 0;
+        const categoriiSpecialeStr = categorii_speciale ? JSON.stringify(categorii_speciale) : '[]';
+
         const result = await pool.query(
             `INSERT INTO Colete (cod_colet, id_client_expeditor, id_client_destinatar, id_sediu, 
-             greutate_fizica_kg, volum_m3, cost_transport, mod_achitare, ramburs, stare, data_primire) 
-             VALUES ($1, 1, 1, 1, $2, $3, $4, $5, $6, 'depozit', NOW()) RETURNING *`, 
-            [cod_colet, greutate_fizica_kg, volum_m3, cost_transport, mod_achitare, val_ramburs]
+             greutate_fizica_kg, volum_m3, cost_transport, mod_achitare, ramburs, stare, categorii_speciale, data_primire) 
+             VALUES ($1, 1, 1, 1, $2, $3, $4, $5, $6, 'depozit', $7, NOW()) RETURNING *`, 
+            [cod_colet, greutate_fizica_kg, volum_m3, cost_transport, mod_achitare, val_ramburs, categoriiSpecialeStr]
         );
         
         res.json({
@@ -893,28 +901,37 @@ app.get("/api/retururi", authenticateToken, async (req, res) => {
 });
 
 // --- SUBCONTRACTORI CU PAGINARE SI FILTRE SERVER-SIDE ---
+// --- SUBCONTRACTORI CU PAGINARE SI FILTRE SERVER-SIDE ---
 app.get("/api/subcontractori", authenticateToken, async (req, res) => {
     try {
-        // Parametri paginare
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
-        
-        // Parametri filtrare
         const { filterDate } = req.query;
         
         let whereConditions = [];
         let queryParams = [];
         let paramCounter = 1;
         
-        // Filtru după dată (dacă este specificat)
+        // Definim coloana pentru numărare. Implicit e 0.
+        let countColumn = '0 as total_livrari';
+
         if (filterDate) {
-            // Aceasta este o implementare simplă - poate fi adaptată la nevoie
+            // 1. Filtrăm doar subcontractorii care au activitate în ziua respectivă
             whereConditions.push(`EXISTS (
                 SELECT 1 FROM Livrari l 
                 WHERE l.id_subcontractor = s.id_subcontractor 
                 AND DATE(l.data_planificata) = $${paramCounter}
             )`);
+            
+            // 2. Numărăm exact câte livrări au în acea zi
+            countColumn = `(
+                SELECT COUNT(*) 
+                FROM Livrari l 
+                WHERE l.id_subcontractor = s.id_subcontractor 
+                AND DATE(l.data_planificata) = $${paramCounter}
+            ) as total_livrari`;
+
             queryParams.push(filterDate);
             paramCounter++;
         }
@@ -923,13 +940,15 @@ app.get("/api/subcontractori", authenticateToken, async (req, res) => {
             ? `WHERE ${whereConditions.join(' AND ')}` 
             : '';
         
-        // Query pentru numărare totală
+        // Query pentru total pagini
         const countQuery = `SELECT COUNT(*) as total FROM Subcontractori s ${whereClause}`;
         const countResult = await pool.query(countQuery, queryParams);
         const total = parseInt(countResult.rows[0].total) || 0;
 
+        // Query principal modificat pentru a include 'countColumn'
         const query = `
-            SELECT s.id_subcontractor, s.denumire, s.cui, s.telefon 
+            SELECT s.id_subcontractor, s.denumire, s.cui, s.telefon,
+                   ${countColumn}
             FROM Subcontractori s
             ${whereClause}
             ORDER BY s.id_subcontractor DESC
@@ -944,18 +963,13 @@ app.get("/api/subcontractori", authenticateToken, async (req, res) => {
             success: true,
             data: result.rows,
             pagination: {
-                page,
-                limit,
-                total,
+                page, limit, total,
                 pages: Math.ceil(total / limit) || 1
             }
         });
     } catch (e) { 
         console.error("Eroare API subcontractori:", e);
-        res.status(500).json({
-            success: false,
-            error: e.message 
-        });
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
