@@ -29,6 +29,7 @@
   "description": "",
   "main": "postcss.config.js",
   "scripts": {
+    "start": "node server/index.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

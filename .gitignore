@@ -1,2 +1,19 @@
 node_modules
 server/.env
+# Dependințe (folderul mare)
+node_modules/
+
+# Fișiere de securitate (FOARTE IMPORTANT)
+.env
+.env.local
+
+# Build-ul de producție (generat de Vite)
+dist/
+build/
+
+# Log-uri de erori
+npm-debug.log*
+yarn-debug.log*
+
+# Fișiere de sistem
+.DS_Store

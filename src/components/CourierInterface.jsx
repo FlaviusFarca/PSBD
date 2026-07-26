@@ -8,8 +8,8 @@ import {
   Download, FileSpreadsheet, FileText, Database
 } from 'lucide-react';
 
-// Folosim 127.0.0.1 pentru stabilitate pe Windows
-const API_URL = "http://127.0.0.1:5000/api";
+// API_URL dinamic pentru cloud / local
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000/api";
 
 // --- DATE DE SIGURANȚĂ (FALLBACK) ---
 const FUEL_PRICES_DEFAULT = {
