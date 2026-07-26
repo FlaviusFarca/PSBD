@@ -161,7 +161,47 @@ async function setupDatabase() {
         await client.query('BEGIN');
         console.log("Începere configurare baza de date...");
         
-        // 1. Creare tabel Roluri
+        // 1. Sedii
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Sedii (
+                id_sediu SERIAL PRIMARY KEY,
+                adresa VARCHAR(255) NOT NULL,
+                telefon VARCHAR(50)
+            )
+        `);
+
+        // 2. Masini
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Masini (
+                id_masina SERIAL PRIMARY KEY,
+                numar_inmatriculare VARCHAR(50) UNIQUE NOT NULL,
+                consum_mediu NUMERIC(5,2),
+                model VARCHAR(100)
+            )
+        `);
+
+        // 3. Curieri
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Curieri (
+                id_curier SERIAL PRIMARY KEY,
+                nume VARCHAR(100) NOT NULL,
+                telefon VARCHAR(50),
+                id_sediu INTEGER REFERENCES Sedii(id_sediu),
+                id_masina INTEGER REFERENCES Masini(id_masina)
+            )
+        `);
+
+        // 4. Subcontractori
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Subcontractori (
+                id_subcontractor SERIAL PRIMARY KEY,
+                denumire VARCHAR(100) NOT NULL,
+                cui VARCHAR(50),
+                telefon VARCHAR(50)
+            )
+        `);
+
+        // 5. Roluri
         await client.query(`
             CREATE TABLE IF NOT EXISTS Roluri (
                 id_rol SERIAL PRIMARY KEY,
@@ -169,9 +209,7 @@ async function setupDatabase() {
                 descriere TEXT
             )
         `);
-        console.log("✓ Tabela Roluri verificată");
-        
-        // 2. Inserare roluri de bază
+
         await client.query(`
             INSERT INTO Roluri (nume_rol, descriere) 
             VALUES 
@@ -181,9 +219,8 @@ async function setupDatabase() {
                 ('Curier', 'Curier - acces limitat la livrări')
             ON CONFLICT (nume_rol) DO NOTHING
         `);
-        console.log("✓ Roluri configurate");
-        
-        // 3. Creare tabel Utilizatori_Sistem
+
+        // 6. Utilizatori_Sistem
         await client.query(`
             CREATE TABLE IF NOT EXISTS Utilizatori_Sistem (
                 id_utilizator SERIAL PRIMARY KEY,
@@ -196,15 +233,109 @@ async function setupDatabase() {
                 data_creare TIMESTAMP DEFAULT NOW()
             )
         `);
-        console.log("✓ Tabela Utilizatori_Sistem verificată");
+
+        // 7. Clienti
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Clienti (
+                id_client SERIAL PRIMARY KEY,
+                nume VARCHAR(100) NOT NULL,
+                telefon VARCHAR(50),
+                adresa TEXT
+            )
+        `);
+
+        // 8. Colete
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Colete (
+                id_colet SERIAL PRIMARY KEY,
+                cod_colet VARCHAR(50) UNIQUE NOT NULL,
+                id_client_expeditor INTEGER REFERENCES Clienti(id_client),
+                id_client_destinatar INTEGER REFERENCES Clienti(id_client),
+                id_sediu INTEGER REFERENCES Sedii(id_sediu),
+                greutate_fizica_kg NUMERIC(10,2),
+                volum_m3 NUMERIC(10,2),
+                cost_transport NUMERIC(10,2),
+                mod_achitare VARCHAR(50),
+                ramburs NUMERIC(10,2),
+                stare VARCHAR(50) DEFAULT 'depozit',
+                categorii_speciale TEXT,
+                data_primire TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
+        // 9. Livrari
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Livrari (
+                id_livrare SERIAL PRIMARY KEY,
+                id_colet INTEGER REFERENCES Colete(id_colet),
+                id_curier INTEGER REFERENCES Curieri(id_curier),
+                id_subcontractor INTEGER REFERENCES Subcontractori(id_subcontractor),
+                data_planificata TIMESTAMP DEFAULT NOW(),
+                stare VARCHAR(50) DEFAULT 'in_tranzit',
+                ramburs_colectat NUMERIC(10,2) DEFAULT 0,
+                combustibil_consumat NUMERIC(10,2) DEFAULT 0
+            )
+        `);
+
+        // 10. Retururi
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Retururi (
+                id_retur SERIAL PRIMARY KEY,
+                id_colet INTEGER REFERENCES Colete(id_colet),
+                data_retur TIMESTAMP DEFAULT NOW(),
+                motiv TEXT,
+                cost_retur NUMERIC(10,2) DEFAULT 0
+            )
+        `);
+
+        // 11. Orase & Tipuri Masina & Rute & Alocari
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Orase (
+                id_oras SERIAL PRIMARY KEY,
+                nume VARCHAR(100) UNIQUE NOT NULL
+            )
+        `);
 
         await client.query(`
-            ALTER TABLE Colete 
-            ADD COLUMN IF NOT EXISTS categorii_speciale TEXT
+            CREATE TABLE IF NOT EXISTS Tipuri_Masina (
+                id_tip_masina SERIAL PRIMARY KEY,
+                denumire VARCHAR(100) NOT NULL
+            )
         `);
-        console.log("✓ Coloana categorii_speciale verificată");
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Rute (
+                id_ruta SERIAL PRIMARY KEY,
+                nume_ruta VARCHAR(100) NOT NULL,
+                id_oras_plecare INTEGER REFERENCES Orase(id_oras),
+                id_oras_destinatie INTEGER REFERENCES Orase(id_oras),
+                distanta_maxima_km NUMERIC(10,2),
+                id_tip_masina INTEGER REFERENCES Tipuri_Masina(id_tip_masina),
+                durata_estimata_min INTEGER
+            )
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Alocari_Rute (
+                id_alocare SERIAL PRIMARY KEY,
+                id_ruta INTEGER REFERENCES Rute(id_ruta),
+                id_curier INTEGER REFERENCES Curieri(id_curier),
+                id_subcontractor INTEGER REFERENCES Subcontractori(id_subcontractor),
+                activa BOOLEAN DEFAULT TRUE
+            )
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS Plan_Tarifar (
+                id_tarif SERIAL PRIMARY KEY,
+                denumire VARCHAR(100) NOT NULL,
+                pret_baza NUMERIC(10,2),
+                pret_per_kg NUMERIC(10,2),
+                pret_per_km NUMERIC(10,2)
+            )
+        `);
         
-        // 4. Adaugă date demo în tabelele de bază dacă sunt goale
+        // --- POPULARE DATE DEMO ---
         // Sedii
         const sediiCount = await client.query("SELECT COUNT(*) FROM Sedii");
         if (parseInt(sediiCount.rows[0].count) === 0) {
@@ -247,20 +378,29 @@ async function setupDatabase() {
                 console.log("✓ Curieri demo creați");
             }
         }
+
+        // Clienti
+        const clientiCount = await client.query("SELECT COUNT(*) FROM Clienti");
+        if (parseInt(clientiCount.rows[0].count) === 0) {
+            await client.query(`
+                INSERT INTO Clienti (nume, telefon, adresa) 
+                VALUES 
+                    ('Client Demo S.R.L.', '0711000111', 'Str. Principală nr. 1, București'),
+                    ('Popa Andrei', '0711222333', 'Str. Florilor nr. 5, Cluj-Napoca')
+            `);
+            console.log("✓ Clienți demo creați");
+        }
         
-        // 5. Creare utilizatori demo
+        // Creare utilizatori demo
         const usersCount = await client.query("SELECT COUNT(*) FROM Utilizatori_Sistem");
         if (parseInt(usersCount.rows[0].count) === 0) {
-            // Obține ID-urile rolurilor
             const roles = await client.query("SELECT id_rol, nume_rol FROM Roluri");
             const roleMap = {};
             roles.rows.forEach(r => roleMap[r.nume_rol] = r.id_rol);
             
-            // Obține ID curier pentru asociere
             const curier = await client.query("SELECT id_curier FROM Curieri WHERE nume = 'Ion Popescu'");
             const id_curier = curier.rows.length > 0 ? curier.rows[0].id_curier : null;
             
-            // Creare utilizatori demo (parole hash-uite)
             const users = [
                 ['Admin User', 'admin@fastcourier.ro', await bcrypt.hash('admin', 10), roleMap['Administrator'], null],
                 ['Ion Popescu', 'curier@fastcourier.ro', await bcrypt.hash('1234', 10), roleMap['Curier'], id_curier],
